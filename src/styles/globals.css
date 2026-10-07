@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Core Backgrounds */
+  --bg-canvas: #FAF8F5;
+  --bg-canvas-subtle: #F4F0EA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-hover: #F8F6F1;
+  --bg-surface-active: #F0ECE4;
+
+  /* Typography / Text */
+  --text-primary: #181716;
+  --text-secondary: #615E59;
+  --text-tertiary: #948F87;
+  --text-brand: #8C5E3C;
+  --text-brand-dark: #603B22;
+
+  /* Borders & Dividers */
+  --border-subtle: #E8E4DC;
+  --border-strong: #D6D0C5;
+  --border-focus: #8C5E3C;
+
+  /* Brand Accents */
+  --brand-50: #FAF6F2;
+  --brand-100: #F4ECE3;
+  --brand-200: #E6D4C2;
+  --brand-500: #8C5E3C;
+  --brand-600: #774C2E;
+  --brand-700: #603B22;
+
+  /* Status Tokens */
+  --status-success-bg: #F2F8F5;
+  --status-success-text: #1F6948;
+  --status-warning-bg: #FDF8EC;
+  --status-warning-text: #8B5B14;
+  --status-danger-bg: #FCF3F2;
+  --status-danger-text: #9E2A22;
+  --status-info-bg: #F3F6FA;
+  --status-info-text: #295484;
+
+  /* Radius Tokens */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-subtle);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Accessible focus indicators */
+  :focus-visible {
+    outline: 2px solid #8C5E3C;
+    outline-offset: 2px;
+  }
+
+  /* Refined scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D8D2C7;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #BFB8AC;
+  }
+}
+
+/* Reduced Motion Compliance */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@layer utilities {
+  /* Subtle depth & surface utilities */
+  .surface-card {
+    background-color: #FFFFFF;
+    border: 1px solid #E8E4DC;
+    box-shadow: 0 1px 3px 0 rgba(24, 23, 22, 0.04), 0 1px 2px -1px rgba(24, 23, 22, 0.04);
+  }
+
+  .surface-card-hover {
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .surface-card-hover:hover {
+    border-color: #D6D0C5;
+    box-shadow: 0 6px 16px -2px rgba(24, 23, 22, 0.07), 0 2px 6px -1px rgba(24, 23, 22, 0.03);
+    transform: translateY(-1px);
+  }
+
+  .surface-panel {
+    background-color: #FFFFFF;
+    border: 1px solid #E8E4DC;
+  }
+
+  .surface-layered {
+    position: relative;
+  }
+  .surface-layered::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(232,228,220,0.6));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Responsive Table Container */
+  .responsive-table-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Mobile Safe Touch Target */
+  .touch-target-safe {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Shimmer effect for skeleton */
+  .shimmer-mask {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer-mask::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0,
+      rgba(255, 255, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    animation: shimmer 1.8s infinite;
+  }
+}

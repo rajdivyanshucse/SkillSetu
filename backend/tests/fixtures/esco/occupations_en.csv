@@ -1,0 +1,8 @@
+conceptUri,iscoGroup,preferredLabel,altLabels,description
+http://data.europa.eu/esco/occupation/529f7f4a-85b4-4b55-a226-0a06c8fcbb31,2512,"software developer","application software developer
+software engineer
+computer programmer","Software developers research, design, and develop computer software systems and applications."
+http://data.europa.eu/esco/occupation/7e3b8a1c-92d4-4e12-b118-0a06c8fcbb22,2519,"software tester","quality assurance analyst
+QA tester","Software testers assess software applications against specified requirements to identify defects and ensure quality standards."
+http://data.europa.eu/esco/occupation/3b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e,2522,"system administrator","systems engineer
+IT administrator","System administrators oversee computer systems, servers, and network configurations to maintain operational integrity."

@@ -1,0 +1,9 @@
+conceptUri,skillType,reuseLevel,preferredLabel,altLabels,description
+http://data.europa.eu/esco/skill/9c676d5e-d264-4437-a9a3-5c777d0a28f8,skill/competence,cross-sector,"software design","software architecture
+system modeling","Design architectural patterns and component interactions for scalable software solutions."
+http://data.europa.eu/esco/skill/1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e,skill/competence,sector-specific,"JavaScript","JS
+ECMAScript","Write client-side and server-side code using the JavaScript programming language."
+http://data.europa.eu/esco/skill/2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f,skill/competence,sector-specific,"Python","Python 3","Develop backend services, automated scripts, and analytical workflows in Python."
+http://data.europa.eu/esco/skill/3d4e5f6a-7b8c-9d0e-1f2a-3b4c5d6e7f8a,skill/competence,cross-sector,"Docker","container virtualization","Create and manage portable container environments using Docker."
+http://data.europa.eu/esco/skill/4e5f6a7b-8c9d-0e1f-2a3b-4c5d6e7f8a9b,skill/competence,cross-sector,"database management","relational database administration","Administer relational and NoSQL database management systems."
+http://data.europa.eu/esco/skill/5f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c,knowledge,cross-sector,"computer programming","computer coding","Principles and paradigms of computer programming."

@@ -1,0 +1,1193 @@
+// SkillSetu Prisma Schema
+// PostgreSQL Database Schema for Intelligent Workforce & Career Intelligence Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. ENUMS
+// ==========================================
+
+enum AccountType {
+  INDIVIDUAL
+  ORGANIZATION
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_VERIFICATION
+  SUSPENDED
+}
+
+enum SkillProficiency {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum RequirementType {
+  REQUIRED
+  PREFERRED
+}
+
+enum PlanningHorizon {
+  MONTHS_6
+  MONTHS_12
+  MONTHS_24
+  MONTHS_36
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ON_SITE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  INTERVIEW
+  OFFER
+  CLOSED
+}
+
+enum PriorityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum GrowthStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+// ==========================================
+// 2. CORE USER & PROFILE MODELS
+// ==========================================
+
+model User {
+  id                  String      @id @default(uuid()) @db.Uuid
+  email               String      @unique
+  passwordHash        String?     // Nullable for accounts that initially onboard or use external auth
+  accountType         AccountType @default(INDIVIDUAL)
+  status              UserStatus  @default(ACTIVE)
+  emailVerified       Boolean     @default(false)
+  emailVerifiedAt     DateTime?
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int         @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // 1-to-1 individual profile
+  profile                 IndividualProfile?
+  organizationMemberships OrganizationMember[]
+  savedOpportunities      SavedOpportunity[]
+  applications            Application[]
+  learningProgress        LearningProgress[]
+  authSessions            AuthSession[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  auditLogs               AuthAuditLog[]
+  recommendations         Recommendation[]
+
+  @@index([email])
+  @@index([accountType, status])
+  @@map("users")
+}
+
+model IndividualProfile {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @db.Uuid
+  fullName          String
+  headline          String?
+  location          String?
+  education         String?
+  currentStatus     String?
+  targetRoleId      String?   @db.Uuid
+  targetIndustry    String?
+  experienceSummary String?   @db.Text
+  careerGoals       String[]  @default([])
+  learningPreferences Json?
+  workPreferences   Json?
+  completeness      Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole Role?      @relation(fields: [targetRoleId], references: [id], onDelete: SetNull)
+
+  skills      UserSkill[]
+  experiences Experience[]
+  educations  Education[]
+  milestones  GrowthMilestone[]
+  projects    GrowthProject[]
+  shortlists  TalentShortlist[]
+
+  @@index([userId])
+  @@index([targetRoleId])
+  @@map("individual_profiles")
+}
+
+// ==========================================
+// 3. SKILL SYSTEM
+// ==========================================
+
+model Skill {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String   @unique
+  category       String
+  description    String?  @db.Text
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  userSkills                   UserSkill[]
+  roleSkills                   RoleSkill[]
+  opportunitySkills            OpportunitySkill[]
+  organizationSkills           OrganizationSkill[]
+  futureSkills                 FutureSkill[]
+  learningResources            LearningResource[]
+  growthMilestones             GrowthMilestone[]
+  planningRoadmapActions       PlanningRoadmapAction[]
+  organizationLearningPrograms OrganizationLearningProgram[]
+  embeddings                   SkillEmbedding[]
+  demandObservations           SkillDemandObservation[]
+  demandForecasts              DemandForecast[]
+  demandSnapshots              DemandTrendSnapshot[]
+
+  @@index([category])
+  @@index([name])
+  @@map("skills")
+}
+
+model SkillEmbedding {
+  id        String   @id @default(uuid()) @db.Uuid
+  skillId   String   @db.Uuid
+  model     String   @default("all-MiniLM-L6-v2")
+  dimension Int      @default(384)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, model])
+  @@index([skillId])
+  @@index([model])
+  @@map("skill_embeddings")
+}
+
+model UserSkill {
+  id                String           @id @default(uuid()) @db.Uuid
+  profileId         String           @db.Uuid
+  skillId           String           @db.Uuid
+  proficiency       SkillProficiency @default(INTERMEDIATE)
+  yearsOfExperience Float            @default(0)
+  isVerified        Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skill   Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, skillId])
+  @@index([profileId])
+  @@index([skillId])
+  @@map("user_skills")
+}
+
+// ==========================================
+// 4. ROLES & TAXONOMIES
+// ==========================================
+
+model Role {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String?  @db.Uuid
+  departmentId    String?  @db.Uuid
+  name            String
+  normalizedName  String   @unique
+  category        String
+  description     String?  @db.Text
+  experienceLevel String?  @default("Mid-Senior")
+  importance      Int      @default(80)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization            Organization?            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department              Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  roleSkills              RoleSkill[]
+  profilesTargeting       IndividualProfile[]
+  opportunities           Opportunity[]
+  advertisedCompensations AdvertisedCompensation[]
+  learningPaths           LearningPath[]
+  demandObservations      RoleDemandObservation[]
+  demandForecasts         DemandForecast[]
+  demandSnapshots         DemandTrendSnapshot[]
+  skillDemandObservations SkillDemandObservation[]
+
+  @@index([category])
+  @@index([name])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model RoleSkill {
+  id                String           @id @default(uuid()) @db.Uuid
+  roleId            String           @db.Uuid
+  skillId           String           @db.Uuid
+  requirementType   RequirementType  @default(REQUIRED)
+  importance        Int              @default(80)
+  targetProficiency SkillProficiency @default(INTERMEDIATE)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  role  Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, skillId])
+  @@index([roleId])
+  @@index([skillId])
+  @@map("role_skills")
+}
+
+// ==========================================
+// 5. EXPERIENCE & EDUCATION
+// ==========================================
+
+model Experience {
+  id             String         @id @default(uuid()) @db.Uuid
+  profileId      String         @db.Uuid
+  company        String
+  roleTitle      String
+  employmentType EmploymentType @default(FULL_TIME)
+  location       String?
+  startDate      DateTime
+  endDate        DateTime?
+  isCurrent      Boolean        @default(false)
+  description    String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("experiences")
+}
+
+model Education {
+  id           String    @id @default(uuid()) @db.Uuid
+  profileId    String    @db.Uuid
+  institution  String
+  degree       String
+  fieldOfStudy String
+  startDate    DateTime
+  endDate      DateTime?
+  isCurrent    Boolean   @default(false)
+  description  String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("educations")
+}
+
+// ==========================================
+// 6. ORGANIZATION & WORKFORCE MODELS
+// ==========================================
+
+model Organization {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  legalName   String?
+  industry    String
+  companySize String
+  location    String?
+  description String?  @db.Text
+  website     String?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members                OrganizationMember[]
+  departments            Department[]
+  skills                 OrganizationSkill[]
+  futureSkills           FutureSkill[]
+  opportunities          Opportunity[]
+  roles                  Role[]
+  talentShortlists       TalentShortlist[]
+  planningScenarios      PlanningScenario[]
+  planningRoadmapActions PlanningRoadmapAction[]
+  learningPrograms       OrganizationLearningProgram[]
+  recommendations        Recommendation[]
+
+  @@index([name])
+  @@index([industry])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  organizationId String   @db.Uuid
+  role           String   @default("MEMBER")
+  accessLevel    String   @default("Viewer")
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+model Department {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  headcount      Int      @default(0)
+  description    String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  roles          Role[]
+  roadmapActions PlanningRoadmapAction[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("departments")
+}
+
+model OrganizationSkill {
+  id                String        @id @default(uuid()) @db.Uuid
+  organizationId    String        @db.Uuid
+  skillId           String        @db.Uuid
+  currentCapability Int           @default(50)
+  targetCapability  Int           @default(80)
+  workforceCount    Int           @default(0)
+  priority          PriorityLevel @default(MEDIUM)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  skill        Skill        @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, skillId])
+  @@index([organizationId])
+  @@index([skillId])
+  @@map("organization_skills")
+}
+
+model FutureSkill {
+  id                 String          @id @default(uuid()) @db.Uuid
+  organizationId     String          @db.Uuid
+  skillId            String          @db.Uuid
+  planningHorizon    PlanningHorizon @default(MONTHS_12)
+  priority           PriorityLevel   @default(HIGH)
+  requiredCapability Int             @default(80)
+  currentCapability  Int             @default(30)
+  notes              String?         @db.Text
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  skill        Skill        @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, skillId, planningHorizon])
+  @@index([organizationId])
+  @@index([skillId])
+  @@map("future_skills")
+}
+
+model TalentShortlist {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  candidateId    String   @db.Uuid
+  notes          String?  @db.Text
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidate    IndividualProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, candidateId])
+  @@index([organizationId])
+  @@index([candidateId])
+  @@map("talent_shortlists")
+}
+
+model PlanningScenario {
+  id                   String          @id @default(uuid()) @db.Uuid
+  organizationId       String          @db.Uuid
+  name                 String
+  description          String?         @db.Text
+  planningHorizon      PlanningHorizon @default(MONTHS_12)
+  workforceGrowthPct   Float           @default(0)
+  skillDemandChangePct Float           @default(0)
+  hiringCapacity       Int             @default(0)
+  developmentCapacity  Int             @default(0)
+  targetTimeline       String?         @default("12 Months")
+  metrics              Json?
+  status               String          @default("ACTIVE")
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("planning_scenarios")
+}
+
+model PlanningRoadmapAction {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  title          String
+  actionType     String        // HIRE, UPSKILL, RESKILL, REDEPLOY, HYBRID
+  skillId        String?       @db.Uuid
+  departmentId   String?       @db.Uuid
+  targetCount    Int           @default(1)
+  completedCount Int           @default(0)
+  progressPct    Int           @default(0)
+  priority       PriorityLevel @default(HIGH)
+  timeframe      String?       @default("Q1-Q2")
+  rationale      String?       @db.Text
+  status         String        @default("IN_PROGRESS")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  skill        Skill?       @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("planning_roadmap_actions")
+}
+
+model OrganizationLearningProgram {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @db.Uuid
+  title            String
+  description      String?  @db.Text
+  targetSkillId    String?  @db.Uuid
+  targetCapability Int      @default(80)
+  enrolledCount    Int      @default(0)
+  completedCount   Int      @default(0)
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targetSkill  Skill?       @relation(fields: [targetSkillId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([targetSkillId])
+  @@map("organization_learning_programs")
+}
+
+// ==========================================
+// 7. OPPORTUNITIES & COMPENSATION
+// ==========================================
+
+model Opportunity {
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String?        @db.Uuid
+  roleId          String?        @db.Uuid
+  title           String
+  companyName     String
+  location        String
+  workMode        WorkMode       @default(HYBRID)
+  employmentType  EmploymentType @default(FULL_TIME)
+  experienceLevel String         @default("Mid-Senior")
+  description     String         @db.Text
+  source          String         @default("SkillSetu Intelligence")
+  externalUrl     String?
+  status          String         @default("ACTIVE")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  role         Role?         @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  skills                  OpportunitySkill[]
+  savedByUsers            SavedOpportunity[]
+  applications            Application[]
+  advertisedCompensations AdvertisedCompensation[]
+
+  @@index([title])
+  @@index([location])
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("opportunities")
+}
+
+model OpportunitySkill {
+  id                String           @id @default(uuid()) @db.Uuid
+  opportunityId     String           @db.Uuid
+  skillId           String           @db.Uuid
+  requirementType   RequirementType  @default(REQUIRED)
+  importance        Int              @default(80)
+  targetProficiency SkillProficiency @default(INTERMEDIATE)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  skill       Skill       @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, skillId])
+  @@index([opportunityId])
+  @@index([skillId])
+  @@map("opportunity_skills")
+}
+
+model AdvertisedCompensation {
+  id              String   @id @default(uuid()) @db.Uuid
+  opportunityId   String?  @db.Uuid
+  roleId          String?  @db.Uuid
+  location        String
+  minCompensation Decimal  @db.Decimal(12, 2)
+  maxCompensation Decimal  @db.Decimal(12, 2)
+  currency        String   @default("INR")
+  period          String   @default("ANNUAL")
+  source          String   @default("Advertised Opportunity Data")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  role        Role?        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([location])
+  @@index([roleId])
+  @@map("advertised_compensations")
+}
+
+// ==========================================
+// 8. LEARNING & DEVELOPMENT
+// ==========================================
+
+model LearningPath {
+  id             String   @id @default(uuid()) @db.Uuid
+  title          String
+  description    String   @db.Text
+  targetRoleId   String?  @db.Uuid
+  level          String   @default("Intermediate")
+  estimatedHours Int      @default(40)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  targetRole Role? @relation(fields: [targetRoleId], references: [id], onDelete: SetNull)
+
+  modules      LearningModule[]
+  userProgress LearningProgress[]
+
+  @@index([targetRoleId])
+  @@map("learning_paths")
+}
+
+model LearningModule {
+  id             String   @id @default(uuid()) @db.Uuid
+  pathId         String   @db.Uuid
+  title          String
+  description    String?  @db.Text
+  order          Int      @default(1)
+  estimatedHours Int      @default(10)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  path      LearningPath       @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  resources LearningResource[]
+
+  @@index([pathId])
+  @@map("learning_modules")
+}
+
+model LearningResource {
+  id                String   @id @default(uuid()) @db.Uuid
+  moduleId          String?  @db.Uuid
+  skillId           String?  @db.Uuid
+  title             String
+  provider          String
+  url               String?
+  resourceType      String   @default("Course")
+  difficulty        String   @default("Intermediate")
+  estimatedDuration String   @default("6 hours")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  module       LearningModule?    @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  skill        Skill?             @relation(fields: [skillId], references: [id], onDelete: SetNull)
+  userProgress LearningProgress[]
+
+  @@index([moduleId])
+  @@index([skillId])
+  @@map("learning_resources")
+}
+
+// ==========================================
+// 9. USER GROWTH & APPLICATIONS
+// ==========================================
+
+model SavedOpportunity {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  opportunityId String   @db.Uuid
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([userId])
+  @@index([opportunityId])
+  @@map("saved_opportunities")
+}
+
+model Application {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @db.Uuid
+  opportunityId String            @db.Uuid
+  status        ApplicationStatus @default(SAVED)
+  appliedDate   DateTime          @default(now())
+  notes         String?           @db.Text
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([userId])
+  @@index([opportunityId])
+  @@map("applications")
+}
+
+model GrowthMilestone {
+  id          String       @id @default(uuid()) @db.Uuid
+  profileId   String       @db.Uuid
+  skillId     String?      @db.Uuid
+  title       String
+  description String?      @db.Text
+  targetDate  DateTime?
+  status      GrowthStatus @default(IN_PROGRESS)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skill   Skill?            @relation(fields: [skillId], references: [id], onDelete: SetNull)
+
+  @@index([profileId])
+  @@index([skillId])
+  @@map("growth_milestones")
+}
+
+model GrowthProject {
+  id            String       @id @default(uuid()) @db.Uuid
+  profileId     String       @db.Uuid
+  title         String
+  description   String       @db.Text
+  skills        String[]     @default([])
+  repositoryUrl String?
+  status        GrowthStatus @default(IN_PROGRESS)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("growth_projects")
+}
+
+model LearningProgress {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @db.Uuid
+  pathId      String?      @db.Uuid
+  resourceId  String?      @db.Uuid
+  status      GrowthStatus @default(IN_PROGRESS)
+  progressPct Int          @default(0)
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  path     LearningPath?     @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  resource LearningResource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([pathId])
+  @@index([resourceId])
+  @@map("learning_progress")
+}
+
+// ==========================================
+// 10. AUTHENTICATION & SECURITY MODELS
+// ==========================================
+
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String    @db.Text
+  userAgent        String?   @db.Text
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastUsedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("auth_sessions")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Text
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Text
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+model AuthAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  action    String   // e.g., "LOGIN_SUCCESS", "LOGIN_FAILED", "REGISTER", "PASSWORD_CHANGE", "LOGOUT", "SESSION_REVOKED"
+  ipAddress String?
+  userAgent String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("auth_audit_logs")
+}
+
+// ==========================================
+// 17. DEMAND INTELLIGENCE & FORECASTING (PHASE 25)
+// ==========================================
+
+model SkillDemandObservation {
+  id              String   @id @default(uuid()) @db.Uuid
+  skillId         String   @db.Uuid
+  roleId          String?  @db.Uuid
+  location        String?
+  experienceLevel String?
+  period          String   // e.g. "2025-Q1", "2025-01"
+  demandCount     Float    @default(0)
+  sourceType      String   @default("SEEDED") // SEEDED, IMPORTED, DERIVED
+  sourceCount     Int      @default(1)
+  dataQuality     String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  role  Role? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([skillId])
+  @@index([roleId])
+  @@index([period])
+  @@index([skillId, period])
+  @@index([sourceType])
+  @@map("skill_demand_observations")
+}
+
+model RoleDemandObservation {
+  id              String   @id @default(uuid()) @db.Uuid
+  roleId          String   @db.Uuid
+  location        String?
+  experienceLevel String?
+  period          String   // e.g. "2025-Q1", "2025-01"
+  demandCount     Float    @default(0)
+  sourceType      String   @default("SEEDED") // SEEDED, IMPORTED, DERIVED
+  sourceCount     Int      @default(1)
+  dataQuality     String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([roleId])
+  @@index([period])
+  @@index([roleId, period])
+  @@index([sourceType])
+  @@map("role_demand_observations")
+}
+
+model DemandForecast {
+  id              String   @id @default(uuid()) @db.Uuid
+  skillId         String?  @db.Uuid
+  roleId          String?  @db.Uuid
+  forecastPeriod  String   // e.g. "2026-Q4"
+  predictedDemand Float
+  lowerBound      Float?
+  upperBound      Float?
+  confidenceScore Float?
+  confidenceLevel String   @default("MEDIUM") // HIGH, MEDIUM, LOW, INSUFFICIENT_DATA
+  model           String   @default("LINEAR_TREND")
+  generatedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  skill Skill? @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  role  Role?  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([skillId])
+  @@index([roleId])
+  @@index([forecastPeriod])
+  @@index([skillId, forecastPeriod])
+  @@index([roleId, forecastPeriod])
+  @@map("demand_forecasts")
+}
+
+model DemandTrendSnapshot {
+  id              String   @id @default(uuid()) @db.Uuid
+  skillId         String?  @db.Uuid
+  roleId          String?  @db.Uuid
+  currentDemand   Float
+  previousDemand  Float
+  growthRate      Float
+  trendCategory   String   // GROWING, STABLE, DECLINING, VOLATILE, INSUFFICIENT_DATA
+  volatility      Float    @default(0)
+  confidence      String   @default("MEDIUM") // HIGH, MEDIUM, LOW, INSUFFICIENT_DATA
+  period          String   // e.g. "2026-Q3"
+  generatedAt     DateTime @default(now())
+
+  skill Skill? @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  role  Role?  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([skillId])
+  @@index([roleId])
+  @@index([period])
+  @@index([trendCategory])
+  @@map("demand_trend_snapshots")
+}
+
+// ==========================================
+// 18. ADVANCED RECOMMENDATION ENGINE (PHASE 26)
+// ==========================================
+
+model Recommendation {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String?  @db.Uuid
+  organizationId    String?  @db.Uuid
+  type              String   // SKILL_PRIORITY, CAREER_ROLE, LEARNING_PATH, PROJECT, OPPORTUNITY, SKILL_GAP, EMERGING_SKILL, UPSKILL, HIRE, REDISTRIBUTE, LEARNING_PROGRAM, FUTURE_SKILL, WORKFORCE_CAPABILITY, ROLE_DEVELOPMENT
+  entityType        String?  // SKILL, ROLE, LEARNING_PATH, PROJECT, OPPORTUNITY, WORKFORCE, FUTURE_SKILL
+  entityId          String?
+  title             String
+  summary           String   @db.Text
+  priority          String   @default("MEDIUM") // HIGH, MEDIUM, LOW, CRITICAL
+  confidence        String   @default("MEDIUM") // HIGH, MEDIUM, LOW, INSUFFICIENT_DATA
+  dataQuality       String   @default("MEDIUM") // HIGH, MEDIUM, LOW
+  status            String   @default("NEW")    // NEW, VIEWED, ACCEPTED, DISMISSED, IN_PROGRESS, COMPLETED, EXPIRED
+  recommendedAction String?  // LEARN, PRACTICE, BUILD, VALIDATE, MONITOR, UPSKILL, HIRE, REDISTRIBUTE
+  evidence          Json?
+  sourceSignals     Json?
+  dismissReason     String?  // NOT_RELEVANT, ALREADY_KNOW, NOT_INTERESTED, COMPLETED_ELSEWHERE
+  dismissNotes      String?
+  generatedAt       DateTime @default(now())
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  feedback     RecommendationFeedback[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([type])
+  @@index([status])
+  @@index([priority])
+  @@index([generatedAt])
+  @@map("recommendations")
+}
+
+model RecommendationFeedback {
+  id               String   @id @default(uuid()) @db.Uuid
+  recommendationId String   @db.Uuid
+  userId           String?  @db.Uuid
+  action           String   // VIEWED, ACCEPTED, DISMISSED, COMPLETED, FEEDBACK_SUBMITTED
+  reason           String?
+  notes            String?  @db.Text
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@index([recommendationId])
+  @@index([userId])
+  @@index([action])
+  @@map("recommendation_feedback")
+}
+
+// ==========================================
+// 19. DATA INGESTION & QUALITY (PHASE 28)
+// ==========================================
+
+model DataSource {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  type        String   @default("JOB_POSTINGS") // JOB_POSTINGS, SKILL_TAXONOMY, ROLE_TAXONOMY, SALARY_DATA, WORKFORCE_DATA, EDUCATION_DATA, GOVERNMENT_DATA, ORGANIZATION_DATA, OTHER
+  provider    String
+  description String?  @db.Text
+  url         String?
+  license     String?
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE, DEPRECATED
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  datasets Dataset[]
+
+  @@index([type])
+  @@index([status])
+  @@map("data_sources")
+}
+
+model Dataset {
+  id               String   @id @default(uuid()) @db.Uuid
+  sourceId         String   @db.Uuid
+  name             String
+  category         String   @default("JOB_POSTINGS")
+  description      String?  @db.Text
+  currentVersionId String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  source   DataSource       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  versions DatasetVersion[]
+
+  @@unique([sourceId, name])
+  @@index([sourceId])
+  @@index([category])
+  @@map("datasets")
+}
+
+model DatasetVersion {
+  id                  String    @id @default(uuid()) @db.Uuid
+  datasetId           String    @db.Uuid
+  versionTag          String
+  effectiveStartDate  DateTime?
+  effectiveEndDate    DateTime?
+  schemaVersion       String    @default("1.0")
+  format              String    @default("JSON") // CSV, JSON
+  fileHash            String?
+  recordCount         Int       @default(0)
+  validRecordCount    Int       @default(0)
+  rejectedRecordCount Int       @default(0)
+  duplicateCount      Int       @default(0)
+  quarantinedCount    Int       @default(0)
+  qualityScore        Float?
+  status              String    @default("DRAFT") // DRAFT, VALIDATING, READY, IMPORTED, FAILED, QUARANTINED, ARCHIVED
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  dataset            Dataset                   @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  ingestionJobs      IngestionJobRecord[]
+  records            IngestionRecord[]
+  qualityReports     DataQualityReport[]
+  quarantinedRecords QuarantinedRecord[]
+  taxonomyMappings   ExternalTaxonomyMapping[]
+
+  @@unique([datasetId, versionTag])
+  @@index([datasetId])
+  @@index([status])
+  @@map("dataset_versions")
+}
+
+model IngestionJobRecord {
+  id               String    @id @default(uuid()) @db.Uuid
+  datasetVersionId String    @db.Uuid
+  stage            String    @default("QUEUED") // QUEUED, VALIDATING, NORMALIZING, DEDUPLICATING, QUALITY_CHECK, UPLOADING, COMPLETED, FAILED, CANCELLED, PARTIAL_SUCCESS
+  status           String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+  progressPercent  Int       @default(0)
+  processedCount   Int       @default(0)
+  successCount     Int       @default(0)
+  failureCount     Int       @default(0)
+  duplicateCount   Int       @default(0)
+  quarantinedCount Int       @default(0)
+  errorLog         Json?
+  metadata         Json?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  datasetVersion     DatasetVersion      @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+  records            IngestionRecord[]
+  quarantinedRecords QuarantinedRecord[]
+
+  @@index([datasetVersionId])
+  @@index([status])
+  @@index([stage])
+  @@map("ingestion_job_records")
+}
+
+model IngestionRecord {
+  id                  String   @id @default(uuid()) @db.Uuid
+  datasetVersionId    String   @db.Uuid
+  ingestionJobId      String?  @db.Uuid
+  externalId          String?
+  recordFingerprint   String
+  rawData             Json
+  normalizedData      Json?
+  validationStatus    String   @default("PENDING") // VALID, INVALID, QUARANTINED, DUPLICATE
+  normalizationStatus String   @default("PENDING") // SUCCESS, PARTIAL, FAILED, UNRESOLVED
+  qualityScore        Float?
+  duplicateOf         String?
+  duplicateReason     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  datasetVersion DatasetVersion      @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+  ingestionJob   IngestionJobRecord? @relation(fields: [ingestionJobId], references: [id], onDelete: SetNull)
+
+  @@index([datasetVersionId])
+  @@index([ingestionJobId])
+  @@index([recordFingerprint])
+  @@index([validationStatus])
+  @@map("ingestion_records")
+}
+
+model DataQualityReport {
+  id                     String   @id @default(uuid()) @db.Uuid
+  datasetVersionId       String   @db.Uuid
+  overallScore           Float
+  completenessScore      Float
+  validityScore          Float
+  consistencyScore       Float
+  uniquenessScore        Float
+  normalizationCoverage  Float
+  provenanceCompleteness Float
+  freshnessScore         Float?
+  totalRecords           Int
+  validRecords           Int
+  rejectedRecords        Int
+  duplicateRecords       Int
+  quarantinedRecords     Int
+  warningCount           Int      @default(0)
+  errorCount             Int      @default(0)
+  fieldMetrics           Json?
+  issuesSummary          Json?
+  evaluatedAt            DateTime @default(now())
+
+  datasetVersion DatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+
+  @@index([datasetVersionId])
+  @@index([evaluatedAt])
+  @@map("data_quality_reports")
+}
+
+model QuarantinedRecord {
+  id               String   @id @default(uuid()) @db.Uuid
+  datasetVersionId String   @db.Uuid
+  ingestionJobId   String?  @db.Uuid
+  externalId       String?
+  reason           String   // MALFORMED_SCHEMA, INVALID_REQUIRED_FIELD, IMPOSSIBLE_VALUE, UNRESOLVED_CRITICAL_MAPPING, DUPLICATE_CONFLICT, UNSAFE_CONTENT, INCONSISTENT_DATES, INVALID_COMPENSATION_FORMAT
+  validationErrors Json
+  rawRecord        Json
+  status           String   @default("QUARANTINED") // QUARANTINED, REVIEWED, APPROVED, DISCARDED
+  reviewedBy       String?
+  reviewNotes      String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  datasetVersion DatasetVersion      @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+  ingestionJob   IngestionJobRecord? @relation(fields: [ingestionJobId], references: [id], onDelete: SetNull)
+
+  @@index([datasetVersionId])
+  @@index([ingestionJobId])
+  @@index([status])
+  @@index([reason])
+  @@map("quarantined_records")
+}
+
+// ==========================================
+// 20. EXTERNAL TAXONOMY MAPPINGS (PHASE 33)
+// ==========================================
+
+model ExternalTaxonomyMapping {
+  id                 String    @id @default(uuid()) @db.Uuid
+  source             String    // ONET, ESCO
+  datasetVersionId   String?   @db.Uuid
+  entityType         String    // SKILL, ROLE, KNOWLEDGE, TECHNOLOGY, COMPETENCE
+  externalId         String    // e.g. O*NET SOC code 15-1252.00 or ESCO concept URI
+  externalUri        String?   // e.g. http://data.europa.eu/esco/occupation/1234
+  internalEntityType String    // SKILL, ROLE
+  internalEntityId   String    @db.Uuid
+  preferredLabel     String
+  altLabels          String[]  @default([])
+  mappingConfidence  Float     @default(1.0)
+  mappingType        String    @default("EXACT") // EXACT, ALIAS_MATCH, SEMANTIC_MATCH, MANUAL
+  sourceMetadata     Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  datasetVersion     DatasetVersion? @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([source, externalId, internalEntityType])
+  @@index([source])
+  @@index([externalId])
+  @@index([externalUri])
+  @@index([internalEntityId])
+  @@index([internalEntityType])
+  @@index([datasetVersionId])
+  @@map("external_taxonomy_mappings")
+}
