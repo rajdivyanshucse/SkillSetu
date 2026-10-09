@@ -12,6 +12,9 @@ import adminRoutes from './admin.routes.js';
 import ingestionRoutes from './ingestion.routes.js';
 import demandIntelligenceRoutes from './demandIntelligence.routes.js';
 import recommendationRoutes from './recommendation.routes.js';
+import capabilityIntelligenceRoutes from './capabilityIntelligence.routes.js';
+import futureCapabilityRoutes from './futureCapabilityIntelligence.routes.js';
+import adaptiveRoadmapRoutes from './adaptiveRoadmap.routes.js';
 
 // Organization intelligence route modules
 import organizationRoutes from './organization.routes.js';
@@ -38,7 +41,14 @@ router.use('/auth', authRoutes);
 router.use('/profile', profileRoutes);
 router.use('/skills', skillRoutes);
 router.use('/intelligence/demand', demandIntelligenceRoutes);
+router.use('/intelligence/capabilities', capabilityIntelligenceRoutes);
+router.use('/intelligence/future-capabilities', futureCapabilityRoutes);
+router.use('/intelligence/roadmap', adaptiveRoadmapRoutes);
 router.use('/intelligence', intelligenceRoutes);
+router.use('/capabilities', capabilityIntelligenceRoutes);
+router.use('/future-capabilities', futureCapabilityRoutes);
+router.use('/individual/capabilities', capabilityIntelligenceRoutes);
+router.use('/roadmaps', adaptiveRoadmapRoutes);
 router.use('/recommendations', recommendationRoutes);
 router.use('/opportunities', opportunityRoutes);
 router.use('/applications', applicationRoutes);

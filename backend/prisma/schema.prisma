@@ -109,6 +109,8 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   auditLogs               AuthAuditLog[]
   recommendations         Recommendation[]
+  developmentRoadmaps     DevelopmentRoadmap[]
+  roadmapReevaluations    RoadmapReevaluation[]
 
   @@index([email])
   @@index([accountType, status])
@@ -136,12 +138,13 @@ model IndividualProfile {
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetRole Role?      @relation(fields: [targetRoleId], references: [id], onDelete: SetNull)
 
-  skills      UserSkill[]
-  experiences Experience[]
-  educations  Education[]
-  milestones  GrowthMilestone[]
-  projects    GrowthProject[]
-  shortlists  TalentShortlist[]
+  skills              UserSkill[]
+  experiences         Experience[]
+  educations          Education[]
+  milestones          GrowthMilestone[]
+  projects            GrowthProject[]
+  shortlists          TalentShortlist[]
+  capabilityEvidences CapabilityEvidence[]
 
   @@index([userId])
   @@index([targetRoleId])
@@ -175,6 +178,9 @@ model Skill {
   demandObservations           SkillDemandObservation[]
   demandForecasts              DemandForecast[]
   demandSnapshots              DemandTrendSnapshot[]
+  capabilityEvidences          CapabilityEvidence[]
+  capabilityDevelopmentPlans   CapabilityDevelopmentPlan[]
+  roadmapStageProgresses       RoadmapStageProgress[]
 
   @@index([category])
   @@index([name])
@@ -216,6 +222,32 @@ model UserSkill {
   @@map("user_skills")
 }
 
+model CapabilityEvidence {
+  id                 String    @id @default(uuid()) @db.Uuid
+  profileId          String    @db.Uuid
+  skillId            String    @db.Uuid
+  evidenceType       String    // PROJECT, EXPERIENCE, ASSESSMENT, LEARNING, PORTFOLIO, CERTIFICATION
+  sourceEntityType   String    // GrowthProject, Experience, LearningProgress, ExternalPortfolio
+  sourceEntityId     String?
+  title              String
+  description        String?   @db.Text
+  evidenceStrength   String    @default("MODERATE") // LIMITED, MODERATE, STRONG
+  evidenceDepth      String    @default("USED") // MENTIONED, USED, BUILT_WITH, CORE_TO_PROJECT
+  verificationStatus String    @default("PLATFORM_ATTACHED") // NONE, DECLARED_ONLY, ATTACHED, MULTI_SOURCE, VALIDATED
+  occurredAt         DateTime?
+  provenance         String    @default("USER_ATTACHED")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  profile IndividualProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skill   Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([skillId])
+  @@index([evidenceType])
+  @@map("capability_evidences")
+}
+
 // ==========================================
 // 4. ROLES & TAXONOMIES
 // ==========================================
@@ -245,6 +277,7 @@ model Role {
   demandForecasts         DemandForecast[]
   demandSnapshots         DemandTrendSnapshot[]
   skillDemandObservations SkillDemandObservation[]
+  developmentRoadmaps     DevelopmentRoadmap[]
 
   @@index([category])
   @@index([name])
@@ -1190,4 +1223,118 @@ model ExternalTaxonomyMapping {
   @@index([internalEntityType])
   @@index([datasetVersionId])
   @@map("external_taxonomy_mappings")
+}
+
+// ==========================================
+// 21. ADAPTIVE GAP-TO-GROWTH ENGINE (PHASE 40)
+// ==========================================
+
+model DevelopmentRoadmap {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @db.Uuid
+  targetRoleId          String   @db.Uuid
+  version               Int      @default(1)
+  status                String   @default("ACTIVE") // ACTIVE, SUPERSEDED, ARCHIVED
+  alignmentPct          Int      @default(0)
+  evidenceCoverageRatio String   @default("0 / 0")
+  currentFocusSkillId   String?  @db.Uuid
+  changeReason          String   @default("INITIAL_GENERATION")
+  changeSummary         String?  @db.Text
+  metadata              Json?
+  generatedAt           DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole    Role                      @relation(fields: [targetRoleId], references: [id], onDelete: Cascade)
+  plans         CapabilityDevelopmentPlan[]
+  stages        RoadmapStageProgress[]
+  reevaluations RoadmapReevaluation[]
+
+  @@index([userId])
+  @@index([targetRoleId])
+  @@index([status])
+  @@index([version])
+  @@map("development_roadmaps")
+}
+
+model CapabilityDevelopmentPlan {
+  id                     String   @id @default(uuid()) @db.Uuid
+  roadmapId              String   @db.Uuid
+  skillId                String   @db.Uuid
+  developmentNeed        String   // KNOWLEDGE_GAP, PRACTICE_GAP, APPLICATION_GAP, EVIDENCE_GAP, TARGET_PROFICIENCY_GAP, FUTURE_RELEVANCE_GAP
+  priority               String   @default("HIGH") // CRITICAL, HIGH, MEDIUM, MONITOR, LOW
+  priorityScore          Float    @default(0)
+  currentCapabilityState String   @default("EVIDENCE_NEEDED")
+  targetProficiency      String   @default("INTERMEDIATE")
+  currentProficiency     String?
+  evidenceGap            String   @default("HIGH") // HIGH, MODERATE, LOW, NONE
+  marketSignal           String   @default("STABLE") // GROWING, STABLE, EMERGING, DECLINING, VOLATILE
+  status                 String   @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED, RETIRED
+  reasons                Json?
+  nextAction             String?
+  order                  Int      @default(1)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  roadmap DevelopmentRoadmap     @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  skill   Skill                  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  stages  RoadmapStageProgress[]
+
+  @@unique([roadmapId, skillId])
+  @@index([roadmapId])
+  @@index([skillId])
+  @@index([priority])
+  @@map("capability_development_plans")
+}
+
+model RoadmapStageProgress {
+  id                   String    @id @default(uuid()) @db.Uuid
+  roadmapId            String    @db.Uuid
+  planId               String    @db.Uuid
+  skillId              String    @db.Uuid
+  stageType            String    // LEARN, PRACTICE, BUILD, VALIDATE, RE_EVALUATE
+  title                String
+  objective            String
+  expectedOutput       String?
+  evidenceRequirement  String?
+  resourceId           String?   @db.Uuid
+  status               String    @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, COMPLETED, RETIRED
+  completedAt          DateTime?
+  completedEvidenceId  String?   @db.Uuid
+  order                Int       @default(1)
+  metadata             Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  roadmap DevelopmentRoadmap        @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  plan    CapabilityDevelopmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  skill   Skill                     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@index([roadmapId])
+  @@index([planId])
+  @@index([skillId])
+  @@index([stageType])
+  @@index([status])
+  @@map("roadmap_stage_progress")
+}
+
+model RoadmapReevaluation {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  roadmapId        String   @db.Uuid
+  triggerType      String   // NEW_EVIDENCE, EVIDENCE_REMOVED, STAGE_COMPLETED, TARGET_ROLE_CHANGED, MANUAL
+  triggerEntity    String?
+  previousSnapshot Json?
+  newSnapshot      Json?
+  changes          Json?
+  status           String   @default("APPLIED") // APPLIED, NO_CHANGE, FAILED
+  createdAt        DateTime @default(now())
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roadmap DevelopmentRoadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([roadmapId])
+  @@index([triggerType])
+  @@map("roadmap_reevaluations")
 }

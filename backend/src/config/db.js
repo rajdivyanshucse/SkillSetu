@@ -70,6 +70,11 @@ class MemoryStore {
     this.dataQualityReports = new Map();
     this.quarantinedRecords = new Map();
     this.externalTaxonomyMappings = new Map();
+    this.capabilityEvidences = new Map();
+    this.developmentRoadmaps = new Map();
+    this.capabilityDevelopmentPlans = new Map();
+    this.roadmapStageProgresses = new Map();
+    this.roadmapReevaluations = new Map();
 
     this._seedInitialCatalog();
   }
@@ -956,6 +961,17 @@ class MemoryStore {
     if (include?.projects) {
       clone.projects = Array.from(this.growthProjects.values()).filter((pr) => pr.profileId === p.id);
     }
+    if (include?.capabilityEvidences) {
+      clone.capabilityEvidences = Array.from(this.capabilityEvidences.values())
+        .filter((ce) => ce.profileId === p.id)
+        .map((ce) => {
+          const ceClone = { ...ce };
+          if (include.capabilityEvidences?.include?.skill) {
+            ceClone.skill = this.skills.get(ce.skillId) || null;
+          }
+          return ceClone;
+        });
+    }
     return clone;
   }
 
@@ -1797,10 +1813,88 @@ class MemoryStore {
       this.growthProjects.set(id, record);
       return record;
     },
+    findUnique: async ({ where }) => {
+      const p = this.growthProjects.get(where.id);
+      return p ? { ...p } : null;
+    },
+    findFirst: async ({ where = {} } = {}) => {
+      for (const p of this.growthProjects.values()) {
+        if (where.id && p.id !== where.id) continue;
+        if (where.profileId && p.profileId !== where.profileId) continue;
+        return { ...p };
+      }
+      return null;
+    },
     findMany: async ({ where = {} } = {}) => {
       let list = Array.from(this.growthProjects.values());
+      if (where.id) list = list.filter((p) => p.id === where.id);
       if (where.profileId) list = list.filter((p) => p.profileId === where.profileId);
-      return list;
+      return list.map((p) => ({ ...p }));
+    },
+    update: async ({ where, data }) => {
+      const existing = this.growthProjects.get(where.id);
+      if (!existing) throw new Error('Growth project not found for update');
+      const updated = { ...existing, ...data, updatedAt: new Date() };
+      this.growthProjects.set(where.id, updated);
+      return { ...updated };
+    },
+    delete: async ({ where }) => {
+      const existing = this.growthProjects.get(where.id);
+      if (existing) this.growthProjects.delete(where.id);
+      return existing;
+    },
+  };
+
+  // Model: LearningProgress
+  learningProgress = {
+    create: async ({ data, include }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        userId: data.userId,
+        pathId: data.pathId || null,
+        resourceId: data.resourceId || null,
+        status: data.status || 'IN_PROGRESS',
+        progressPct: data.progressPct || 0,
+        completedAt: data.completedAt ? new Date(data.completedAt) : null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.learningProgress.set(id, record);
+      const clone = { ...record };
+      if (include?.resource && record.resourceId) {
+        const res = this.learningResources.get(record.resourceId);
+        clone.resource = res ? { ...res, skill: res.skillId ? this.skills.get(res.skillId) || null : null } : null;
+      }
+      return clone;
+    },
+    findFirst: async ({ where = {}, include } = {}) => {
+      for (const lp of this.learningProgress.values()) {
+        if (where.id && lp.id !== where.id) continue;
+        if (where.userId && lp.userId !== where.userId) continue;
+        if (where.resourceId && lp.resourceId !== where.resourceId) continue;
+        const clone = { ...lp };
+        if (include?.resource && lp.resourceId) {
+          const res = this.learningResources.get(lp.resourceId);
+          clone.resource = res ? { ...res, skill: res.skillId ? this.skills.get(res.skillId) || null : null } : null;
+        }
+        return clone;
+      }
+      return null;
+    },
+    findMany: async ({ where = {}, include } = {}) => {
+      let list = Array.from(this.learningProgress.values());
+      if (where.userId) list = list.filter((lp) => lp.userId === where.userId);
+      if (where.pathId) list = list.filter((lp) => lp.pathId === where.pathId);
+      if (where.resourceId) list = list.filter((lp) => lp.resourceId === where.resourceId);
+      return list.map((lp) => {
+        const clone = { ...lp };
+        if (include?.resource && lp.resourceId) {
+          const res = this.learningResources.get(lp.resourceId);
+          clone.resource = res ? { ...res, skill: res.skillId ? this.skills.get(res.skillId) || null : null } : null;
+        }
+        return clone;
+      });
     },
   };
 
@@ -4057,6 +4151,395 @@ class MemoryStore {
     },
   };
 
+  _formatCapabilityEvidence(ce, include = {}) {
+    if (!ce) return null;
+    const clone = { ...ce };
+    if (include?.skill) {
+      clone.skill = this.skills.get(ce.skillId) || null;
+    }
+    if (include?.profile) {
+      for (const p of this.individualProfiles.values()) {
+        if (p.id === ce.profileId) {
+          clone.profile = this._formatProfile(p);
+          break;
+        }
+      }
+    }
+    return clone;
+  }
+
+  // Model: CapabilityEvidence (Phase 38)
+  capabilityEvidence = {
+    create: async ({ data, include }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        profileId: data.profileId,
+        skillId: data.skillId,
+        evidenceType: data.evidenceType || 'PROJECT',
+        sourceEntityType: data.sourceEntityType || 'GrowthProject',
+        sourceEntityId: data.sourceEntityId || null,
+        title: data.title,
+        description: data.description || null,
+        evidenceStrength: data.evidenceStrength || 'MODERATE',
+        evidenceDepth: data.evidenceDepth || 'USED',
+        verificationStatus: data.verificationStatus || 'PLATFORM_ATTACHED',
+        occurredAt: data.occurredAt ? new Date(data.occurredAt) : new Date(),
+        provenance: data.provenance || 'USER_ATTACHED',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.capabilityEvidences.set(id, record);
+      return this._formatCapabilityEvidence(record, include);
+    },
+    findUnique: async ({ where, include }) => {
+      const ce = this.capabilityEvidences.get(where.id);
+      if (!ce) return null;
+      return this._formatCapabilityEvidence(ce, include);
+    },
+    findFirst: async ({ where = {}, include } = {}) => {
+      for (const ce of this.capabilityEvidences.values()) {
+        if (where.id && ce.id !== where.id) continue;
+        if (where.profileId && ce.profileId !== where.profileId) continue;
+        if (where.skillId && ce.skillId !== where.skillId) continue;
+        if (where.evidenceType && ce.evidenceType !== where.evidenceType) continue;
+        if (where.sourceEntityId && ce.sourceEntityId !== where.sourceEntityId) continue;
+        return this._formatCapabilityEvidence(ce, include);
+      }
+      return null;
+    },
+    findMany: async ({ where = {}, include, orderBy, skip = 0, take = 100 } = {}) => {
+      let list = Array.from(this.capabilityEvidences.values());
+      if (where.profileId) list = list.filter((ce) => ce.profileId === where.profileId);
+      if (where.skillId) list = list.filter((ce) => ce.skillId === where.skillId);
+      if (where.evidenceType) list = list.filter((ce) => ce.evidenceType === where.evidenceType);
+      if (where.sourceEntityType) list = list.filter((ce) => ce.sourceEntityType === where.sourceEntityType);
+      if (where.sourceEntityId) list = list.filter((ce) => ce.sourceEntityId === where.sourceEntityId);
+      if (where.verificationStatus) list = list.filter((ce) => ce.verificationStatus === where.verificationStatus);
+      if (orderBy?.createdAt === 'desc') list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return list.slice(skip, skip + take).map((ce) => this._formatCapabilityEvidence(ce, include));
+    },
+    update: async ({ where, data, include }) => {
+      const existing = this.capabilityEvidences.get(where.id);
+      if (!existing) throw new Error('Capability evidence not found for update');
+      const updated = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      };
+      this.capabilityEvidences.set(where.id, updated);
+      return this._formatCapabilityEvidence(updated, include);
+    },
+    delete: async ({ where }) => {
+      const existing = this.capabilityEvidences.get(where.id);
+      if (existing) this.capabilityEvidences.delete(where.id);
+      return existing;
+    },
+    deleteMany: async ({ where = {} } = {}) => {
+      let count = 0;
+      for (const [id, ce] of this.capabilityEvidences.entries()) {
+        if (where.profileId && ce.profileId !== where.profileId) continue;
+        if (where.skillId && ce.skillId !== where.skillId) continue;
+        if (where.sourceEntityId && ce.sourceEntityId !== where.sourceEntityId) continue;
+        this.capabilityEvidences.delete(id);
+        count++;
+      }
+      return { count };
+    },
+    count: async ({ where = {} } = {}) => {
+      let list = Array.from(this.capabilityEvidences.values());
+      if (where.profileId) list = list.filter((ce) => ce.profileId === where.profileId);
+      if (where.skillId) list = list.filter((ce) => ce.skillId === where.skillId);
+      return list.length;
+    },
+  };
+
+  _formatDevelopmentRoadmap(rm, include = {}) {
+    if (!rm) return null;
+    const clone = { ...rm };
+    if (include?.targetRole) {
+      clone.targetRole = this.roles.get(rm.targetRoleId) || null;
+    }
+    if (include?.plans) {
+      clone.plans = Array.from(this.capabilityDevelopmentPlans.values())
+        .filter((p) => p.roadmapId === rm.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map((p) => this._formatCapabilityDevelopmentPlan(p, include.plans?.include));
+    }
+    if (include?.stages) {
+      clone.stages = Array.from(this.roadmapStageProgresses.values())
+        .filter((s) => s.roadmapId === rm.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map((s) => this._formatRoadmapStageProgress(s, include.stages?.include));
+    }
+    if (include?.reevaluations) {
+      clone.reevaluations = Array.from(this.roadmapReevaluations.values())
+        .filter((r) => r.roadmapId === rm.id)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+    return clone;
+  }
+
+  _formatCapabilityDevelopmentPlan(plan, include = {}) {
+    if (!plan) return null;
+    const clone = { ...plan };
+    if (include?.skill) {
+      clone.skill = this.skills.get(plan.skillId) || null;
+    }
+    if (include?.stages) {
+      clone.stages = Array.from(this.roadmapStageProgresses.values())
+        .filter((s) => s.planId === plan.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    return clone;
+  }
+
+  _formatRoadmapStageProgress(stage, include = {}) {
+    if (!stage) return null;
+    const clone = { ...stage };
+    if (include?.skill) {
+      clone.skill = this.skills.get(stage.skillId) || null;
+    }
+    if (include?.plan) {
+      clone.plan = this.capabilityDevelopmentPlans.get(stage.planId) || null;
+    }
+    return clone;
+  }
+
+  // Model: DevelopmentRoadmap (Phase 40)
+  developmentRoadmap = {
+    create: async ({ data, include }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        userId: data.userId,
+        targetRoleId: data.targetRoleId,
+        version: data.version || 1,
+        status: data.status || 'ACTIVE',
+        alignmentPct: data.alignmentPct || 0,
+        evidenceCoverageRatio: data.evidenceCoverageRatio || '0 / 0',
+        currentFocusSkillId: data.currentFocusSkillId || null,
+        changeReason: data.changeReason || 'INITIAL_GENERATION',
+        changeSummary: data.changeSummary || null,
+        metadata: data.metadata || null,
+        generatedAt: data.generatedAt ? new Date(data.generatedAt) : new Date(),
+        updatedAt: new Date(),
+      };
+      this.developmentRoadmaps.set(id, record);
+      return this._formatDevelopmentRoadmap(record, include);
+    },
+    findUnique: async ({ where, include }) => {
+      const rm = this.developmentRoadmaps.get(where.id);
+      if (!rm) return null;
+      return this._formatDevelopmentRoadmap(rm, include);
+    },
+    findFirst: async ({ where = {}, include } = {}) => {
+      for (const rm of this.developmentRoadmaps.values()) {
+        if (where.id && rm.id !== where.id) continue;
+        if (where.userId && rm.userId !== where.userId) continue;
+        if (where.targetRoleId && rm.targetRoleId !== where.targetRoleId) continue;
+        if (where.status && rm.status !== where.status) continue;
+        return this._formatDevelopmentRoadmap(rm, include);
+      }
+      return null;
+    },
+    findMany: async ({ where = {}, include, orderBy, take } = {}) => {
+      let list = Array.from(this.developmentRoadmaps.values());
+      if (where.userId) list = list.filter((rm) => rm.userId === where.userId);
+      if (where.targetRoleId) list = list.filter((rm) => rm.targetRoleId === where.targetRoleId);
+      if (where.status) list = list.filter((rm) => rm.status === where.status);
+      if (orderBy?.version === 'desc') {
+        list.sort((a, b) => (b.version || 0) - (a.version || 0));
+      } else if (orderBy?.generatedAt === 'desc') {
+        list.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+      }
+      if (take) list = list.slice(0, take);
+      return list.map((rm) => this._formatDevelopmentRoadmap(rm, include));
+    },
+    update: async ({ where, data, include }) => {
+      const existing = this.developmentRoadmaps.get(where.id);
+      if (!existing) return null;
+      const updated = { ...existing, ...data, updatedAt: new Date() };
+      this.developmentRoadmaps.set(where.id, updated);
+      return this._formatDevelopmentRoadmap(updated, include);
+    },
+    updateMany: async ({ where = {}, data }) => {
+      let count = 0;
+      for (const [id, rm] of this.developmentRoadmaps.entries()) {
+        if (where.userId && rm.userId !== where.userId) continue;
+        if (where.targetRoleId && rm.targetRoleId !== where.targetRoleId) continue;
+        if (where.status && rm.status !== where.status) continue;
+        const updated = { ...rm, ...data, updatedAt: new Date() };
+        this.developmentRoadmaps.set(id, updated);
+        count++;
+      }
+      return { count };
+    },
+    delete: async ({ where }) => {
+      const existing = this.developmentRoadmaps.get(where.id);
+      if (existing) this.developmentRoadmaps.delete(where.id);
+      return existing;
+    },
+  };
+
+  // Model: CapabilityDevelopmentPlan (Phase 40)
+  capabilityDevelopmentPlan = {
+    create: async ({ data, include }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        roadmapId: data.roadmapId,
+        skillId: data.skillId,
+        developmentNeed: data.developmentNeed || 'KNOWLEDGE_GAP',
+        priority: data.priority || 'HIGH',
+        priorityScore: data.priorityScore || 0,
+        currentCapabilityState: data.currentCapabilityState || 'EVIDENCE_NEEDED',
+        targetProficiency: data.targetProficiency || 'INTERMEDIATE',
+        currentProficiency: data.currentProficiency || 'NONE',
+        evidenceGap: data.evidenceGap || 'HIGH',
+        marketSignal: data.marketSignal || 'STABLE',
+        status: data.status || 'NOT_STARTED',
+        reasons: data.reasons || [],
+        nextAction: data.nextAction || null,
+        order: data.order || 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.capabilityDevelopmentPlans.set(id, record);
+      return this._formatCapabilityDevelopmentPlan(record, include);
+    },
+    findUnique: async ({ where, include }) => {
+      const p = this.capabilityDevelopmentPlans.get(where.id);
+      if (!p) return null;
+      return this._formatCapabilityDevelopmentPlan(p, include);
+    },
+    findMany: async ({ where = {}, include } = {}) => {
+      let list = Array.from(this.capabilityDevelopmentPlans.values());
+      if (where.roadmapId) list = list.filter((p) => p.roadmapId === where.roadmapId);
+      if (where.skillId) list = list.filter((p) => p.skillId === where.skillId);
+      if (where.status) list = list.filter((p) => p.status === where.status);
+      list.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return list.map((p) => this._formatCapabilityDevelopmentPlan(p, include));
+    },
+    update: async ({ where, data, include }) => {
+      const existing = this.capabilityDevelopmentPlans.get(where.id);
+      if (!existing) return null;
+      const updated = { ...existing, ...data, updatedAt: new Date() };
+      this.capabilityDevelopmentPlans.set(where.id, updated);
+      return this._formatCapabilityDevelopmentPlan(updated, include);
+    },
+    deleteMany: async ({ where = {} } = {}) => {
+      let count = 0;
+      for (const [id, p] of this.capabilityDevelopmentPlans.entries()) {
+        if (where.roadmapId && p.roadmapId !== where.roadmapId) continue;
+        this.capabilityDevelopmentPlans.delete(id);
+        count++;
+      }
+      return { count };
+    },
+  };
+
+  // Model: RoadmapStageProgress (Phase 40)
+  roadmapStageProgress = {
+    create: async ({ data, include }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        roadmapId: data.roadmapId,
+        planId: data.planId,
+        skillId: data.skillId,
+        stageType: data.stageType || 'LEARN',
+        title: data.title,
+        objective: data.objective,
+        expectedOutput: data.expectedOutput || null,
+        evidenceRequirement: data.evidenceRequirement || null,
+        resourceId: data.resourceId || null,
+        status: data.status || 'NOT_STARTED',
+        completedAt: data.completedAt ? new Date(data.completedAt) : null,
+        completedEvidenceId: data.completedEvidenceId || null,
+        order: data.order || 1,
+        metadata: data.metadata || null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      this.roadmapStageProgresses.set(id, record);
+      return this._formatRoadmapStageProgress(record, include);
+    },
+    findUnique: async ({ where, include }) => {
+      const st = this.roadmapStageProgresses.get(where.id);
+      if (!st) return null;
+      return this._formatRoadmapStageProgress(st, include);
+    },
+    findFirst: async ({ where = {}, include } = {}) => {
+      for (const st of this.roadmapStageProgresses.values()) {
+        if (where.id && st.id !== where.id) continue;
+        if (where.roadmapId && st.roadmapId !== where.roadmapId) continue;
+        if (where.planId && st.planId !== where.planId) continue;
+        if (where.skillId && st.skillId !== where.skillId) continue;
+        if (where.stageType && st.stageType !== where.stageType) continue;
+        return this._formatRoadmapStageProgress(st, include);
+      }
+      return null;
+    },
+    findMany: async ({ where = {}, include } = {}) => {
+      let list = Array.from(this.roadmapStageProgresses.values());
+      if (where.roadmapId) list = list.filter((s) => s.roadmapId === where.roadmapId);
+      if (where.planId) list = list.filter((s) => s.planId === where.planId);
+      if (where.skillId) list = list.filter((s) => s.skillId === where.skillId);
+      if (where.stageType) list = list.filter((s) => s.stageType === where.stageType);
+      if (where.status) list = list.filter((s) => s.status === where.status);
+      list.sort((a, b) => (a.order || 0) - (b.order || 0));
+      return list.map((s) => this._formatRoadmapStageProgress(s, include));
+    },
+    update: async ({ where, data, include }) => {
+      const existing = this.roadmapStageProgresses.get(where.id);
+      if (!existing) return null;
+      const updated = { ...existing, ...data, updatedAt: new Date() };
+      this.roadmapStageProgresses.set(where.id, updated);
+      return this._formatRoadmapStageProgress(updated, include);
+    },
+    deleteMany: async ({ where = {} } = {}) => {
+      let count = 0;
+      for (const [id, s] of this.roadmapStageProgresses.entries()) {
+        if (where.roadmapId && s.roadmapId !== where.roadmapId) continue;
+        this.roadmapStageProgresses.delete(id);
+        count++;
+      }
+      return { count };
+    },
+  };
+
+  // Model: RoadmapReevaluation (Phase 40)
+  roadmapReevaluation = {
+    create: async ({ data }) => {
+      const id = data.id || this.uuid();
+      const record = {
+        id,
+        userId: data.userId,
+        roadmapId: data.roadmapId,
+        triggerType: data.triggerType || 'MANUAL',
+        triggerEntity: data.triggerEntity || null,
+        previousSnapshot: data.previousSnapshot || null,
+        newSnapshot: data.newSnapshot || null,
+        changes: data.changes || [],
+        status: data.status || 'APPLIED',
+        createdAt: new Date(),
+      };
+      this.roadmapReevaluations.set(id, record);
+      return record;
+    },
+    findMany: async ({ where = {}, orderBy, take } = {}) => {
+      let list = Array.from(this.roadmapReevaluations.values());
+      if (where.userId) list = list.filter((r) => r.userId === where.userId);
+      if (where.roadmapId) list = list.filter((r) => r.roadmapId === where.roadmapId);
+      if (orderBy?.createdAt === 'desc') {
+        list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      }
+      if (take) list = list.slice(0, take);
+      return list;
+    },
+  };
+
   $transaction = async (fn) => {
     if (typeof fn === 'function') {
       return fn(this);
@@ -4144,6 +4627,11 @@ function createSmartDbClient(realClient, fallbackStore) {
     'skill',
     'skillEmbedding',
     'userSkill',
+    'capabilityEvidence',
+    'developmentRoadmap',
+    'capabilityDevelopmentPlan',
+    'roadmapStageProgress',
+    'roadmapReevaluation',
     'role',
     'roleSkill',
     'experience',
